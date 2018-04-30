@@ -133,27 +133,32 @@ test('deleting a record that is part of a hasMany removes it from the hasMany re
   assert.equal(person.get('name'), 'Adam Sunderland', 'expected related records to be loaded');
 
   run(function() {
-    person.destroyRecord();
+    person.deleteRecord();
+    person.save();
   });
 
   assert.equal(group.get('people.length'), 1, 'expected 1 related records after delete');
 });
 
-test('deleting a record that is part of a hasMany removes it from the hasMany recordArray when adapter deleteRecord function returns a payload', function(assert) {
+test('We properly unload a record when destroyRecord is called', function(assert) {
   let group;
-  let person;
   const Group = DS.Model.extend({
-    people: DS.hasMany('person', { inverse: null, async: false })
+    name: attr(),
   });
-  Group.toString = () => { return 'Group'; }
+  Group.toString = () => {
+    return 'Group';
+  };
 
+  env.adapter.shouldBackgroundReloadRecord = () => false;
   env.adapter.deleteRecord = function() {
     return EmberPromise.resolve({
       data: {
         id: '1',
         type: 'group',
-        attributes: {}
-      }
+        attributes: {
+          name: 'Deleted Checkers',
+        },
+      },
     });
   };
 
@@ -164,49 +169,23 @@ test('deleting a record that is part of a hasMany removes it from the hasMany re
       data: {
         type: 'group',
         id: '1',
-        relationships: {
-          people: {
-            data: [
-              { type: 'person', id: '1' },
-              { type: 'person', id: '2' }
-            ]
-          }
-        }
-      },
-      included: [
-        {
-          type: 'person',
-          id: '1',
-          attributes: {
-            name: 'Adam Sunderland'
-          }
+        attributes: {
+          name: 'Checkers',
         },
-        {
-          type: 'person',
-          id: '2',
-          attributes: {
-            name: 'Dave Sunderland'
-          }
-        }
-      ]
+      },
     });
 
     group = env.store.peekRecord('group', '1');
-    person = env.store.peekRecord('person', '1');
   });
 
-  // Sanity Check we are in the correct state.
-  assert.equal(group.get('people.length'), 2, 'expected 2 related records before delete');
-  assert.equal(person.get('name'), 'Adam Sunderland', 'expected related records to be loaded');
+  assert.equal(group.get('name'), 'Checkers', 'We have the right group');
 
   const promise = run(() => group.destroyRecord());
 
   return promise.then(() => {
-    // qunit complains if i pass the record to QUnit due to some assertion in ember
-    // iterating over the properties.
-    const hasGroup = env.store.peekRecord('group', '1') ? true : false;
-    assert.equal(hasGroup, false);
-    assert.equal(person.get('group'), null, 'expected relationship to be null');
+    const deletedGroup = env.store.peekRecord('group', '1');
+
+    assert.equal(!!deletedGroup, false, 'expected to no longer have group 1');
   });
 });
 
@@ -246,7 +225,8 @@ test('records can be deleted during record array enumeration', function(assert) 
 
   run(function() {
     all.forEach(function(record) {
-      record.destroyRecord();
+      record.deleteRecord();
+      record.save();
     });
   });
 
