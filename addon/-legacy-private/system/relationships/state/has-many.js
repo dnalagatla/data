@@ -4,6 +4,7 @@ import { PromiseManyArray } from '../../promise-proxies';
 import Relationship from './relationship';
 import OrderedSet from '../../ordered-set';
 import ManyArray from '../../many-array';
+import { resolve } from 'rsvp';
 
 export default class ManyRelationship extends Relationship {
   constructor(store, internalModel, inverseKey, relationshipMeta) {
@@ -323,21 +324,45 @@ export default class ManyRelationship extends Relationship {
           this.manyArray.set('isLoaded', true);
         });
         return this.manyArray;
-      });
+      })
+      .then(
+        () => { return this._handleCompletedFind(); },
+        (e) => { return this._handleCompletedFind(e); }
+      );
+  }
+
+  _handleCompletedFind(error) {
+    let manyArray = this.manyArray;
+
+    if (!manyArray.get('isDestroyed')) {
+      //Goes away after the manyArray refactor
+      manyArray.set('isLoaded', true);
+      this.setRelationshipIsStale(false);
+    }
+
+    if (error) {
+      throw error;
+    }
+
+    return manyArray;
   }
 
   findRecords() {
     let manyArray = this.manyArray;
     let internalModels = manyArray.currentState;
+    let promise;
 
-    //TODO CLEANUP
-    return this.store.findMany(internalModels).then(() => {
-      if (!manyArray.get('isDestroyed')) {
-        //Goes away after the manyArray refactor
-        manyArray.set('isLoaded', true);
-      }
-      return manyArray;
-    });
+    if (this.relationshipIsStale === true || !this._loadingPromise) {
+      //TODO CLEANUP
+      promise = this.store.findMany(internalModels).then(
+        () => { return this._handleCompletedFind(); },
+        (e) => { return this._handleCompletedFind(e); }
+      );
+    } else {
+      promise = this._loadingPromise;
+    }
+
+    return promise;
   }
 
   notifyHasManyChanged() {
